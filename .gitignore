@@ -1,0 +1,6 @@
+*.o
+encrypt_decrypt
+build/
+node_modules/
+.DS_Store
+.env

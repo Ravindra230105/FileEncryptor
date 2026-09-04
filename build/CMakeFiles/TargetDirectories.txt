@@ -1,3 +1,0 @@
-/cygdrive/C/Users/HP/OneDrive/Desktop/main projects/Encryptor/build/CMakeFiles/main.dir
-/cygdrive/C/Users/HP/OneDrive/Desktop/main projects/Encryptor/build/CMakeFiles/edit_cache.dir
-/cygdrive/C/Users/HP/OneDrive/Desktop/main projects/Encryptor/build/CMakeFiles/rebuild_cache.dir

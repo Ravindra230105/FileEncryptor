@@ -1,67 +1,109 @@
-#include <iostream>
 #include "ProcessManagement.hpp"
-#include <windows.h>
-#include <cstring>
 #include "../encryptDecrypt/Cryption.hpp"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cstring>
+
 ProcessManagement::ProcessManagement() {
-    itemsSemaphore = CreateSemaphore(nullptr, 0, 1000, "items_semaphore");
-    emptySlotsSemaphore = CreateSemaphore(nullptr, 1000, 1000, "empty_slots_semaphore");
-    
-    shmHandle = CreateFileMapping(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(SharedMemory), SHM_NAME);
-    sharedMem = static_cast<SharedMemory *>(MapViewOfFile(shmHandle, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(SharedMemory)));
-    
-    sharedMem->front = 0;
-    sharedMem->rear = 0;
-    sharedMem->size = 0;
+    // MAP_SHARED means the memory stays visible to every process we fork later.
+    shared = (SharedData*) mmap(NULL, sizeof(SharedData), PROT_READ | PROT_WRITE,
+                                MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+
+    if (shared == MAP_FAILED) {
+        shared = NULL;
+        remainingTasks = SEM_FAILED;
+        return;
+    }
+
+    memset(shared, 0, sizeof(SharedData));
+
+    // A normal mutex only works inside one process, so it has to be marked as shared.
+    pthread_mutexattr_t attributes;
+    pthread_mutexattr_init(&attributes);
+    pthread_mutexattr_setpshared(&attributes, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(&shared->lock, &attributes);
+    pthread_mutexattr_destroy(&attributes);
+
+    semaphoreName = "/encryptor-" + std::to_string(getpid());
+    sem_unlink(semaphoreName.c_str());
+    remainingTasks = sem_open(semaphoreName.c_str(), O_CREAT, 0644, 0);
 }
 
 ProcessManagement::~ProcessManagement() {
-    UnmapViewOfFile(sharedMem);
-    CloseHandle(shmHandle);
+    if (remainingTasks != SEM_FAILED) {
+        sem_close(remainingTasks);
+        sem_unlink(semaphoreName.c_str());
+    }
+
+    if (shared != NULL) {
+        munmap(shared, sizeof(SharedData));
+    }
 }
 
-bool ProcessManagement::submitToQueue(std::unique_ptr<Task> task) {
-    WaitForSingleObject(emptySlotsSemaphore, INFINITE);
-    
-    std::lock_guard<std::mutex> lock(queueLock);
+bool ProcessManagement::isReady() const {
+    return shared != NULL && remainingTasks != SEM_FAILED;
+}
 
-    if (sharedMem->size >= 1000) {
-        return false;
+void ProcessManagement::addTask(const std::string& path) {
+    if (shared->taskCount >= MAX_FILES) {
+        return;
     }
-    strcpy(sharedMem->tasks[sharedMem->rear], task->toString().c_str());
-    sharedMem->rear = (sharedMem->rear + 1) % 1000;
-    sharedMem->size++;
 
-    ReleaseSemaphore(itemsSemaphore, 1, nullptr);
+    strncpy(shared->paths[shared->taskCount], path.c_str(), MAX_PATH_LENGTH - 1);
+    shared->taskCount++;
 
-    STARTUPINFO si;
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    ZeroMemory(&pi, sizeof(pi));
+    sem_post(remainingTasks);
+}
 
-    if (!CreateProcess(nullptr, "executeTask", nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+// Claims one file from the queue. Returns false once the queue is empty.
+bool ProcessManagement::takeNextTask(std::string& path) {
+    if (sem_trywait(remainingTasks) != 0) {
         return false;
     }
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    
+    pthread_mutex_lock(&shared->lock);
+    path = shared->paths[shared->nextTask];
+    shared->nextTask++;
+    pthread_mutex_unlock(&shared->lock);
+
     return true;
 }
 
-void ProcessManagement::executeTask() {
-    WaitForSingleObject(itemsSemaphore, INFINITE);
+void ProcessManagement::workerLoop(int worker, int key) {
+    std::string path;
 
-    std::lock_guard<std::mutex> lock(queueLock);
-    char taskStr[256];
-    strcpy(taskStr, sharedMem->tasks[sharedMem->front]);
-    sharedMem->front = (sharedMem->front + 1) % 1000;
-    sharedMem->size--;
+    while (takeNextTask(path)) {
+        if (cryptFile(path, key)) {
+            shared->filesDone[worker]++;
+        }
+    }
+}
 
-    ReleaseSemaphore(emptySlotsSemaphore, 1, nullptr);
-    
-    executeCryption(taskStr);
+void ProcessManagement::runWorkers(int workerCount, int key) {
+    std::vector<pid_t> children;
+
+    for (int worker = 0; worker < workerCount; worker++) {
+        pid_t pid = fork();
+
+        if (pid == 0) {
+            workerLoop(worker, key);
+            _exit(0);
+        }
+
+        if (pid > 0) {
+            children.push_back(pid);
+        }
+    }
+
+    for (size_t i = 0; i < children.size(); i++) {
+        waitpid(children[i], NULL, 0);
+    }
+}
+
+int ProcessManagement::filesDoneBy(int worker) const {
+    return shared->filesDone[worker];
 }

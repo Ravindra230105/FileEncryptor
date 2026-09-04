@@ -1,15 +1,23 @@
 import os
-import string
 import random
+import string
+import sys
 
-def makeFiles(path):
+# Creates a folder of random text files to test the encryptor with.
+# Usage: python3 makeDirs.py [folder] [file count] [size in bytes]
+def makeFiles(path, count, size):
     os.makedirs(path, exist_ok=True)
-    os.chdir(path)
-    for i in range(1000):
-        filename = f"test{i+1}.txt"
+
+    for i in range(count):
+        filename = os.path.join(path, f"test{i + 1}.txt")
         with open(filename, "w") as file:
-            random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=1000))
-            file.write(random_string)
+            file.write(''.join(random.choices(string.ascii_uppercase + string.digits, k=size)))
+
+    print(f"Created {count} files of {size} bytes in {path}")
 
 if __name__ == "__main__":
-    makeFiles("test")
+    folder = sys.argv[1] if len(sys.argv) > 1 else "sample-data"
+    count = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
+    size = int(sys.argv[3]) if len(sys.argv) > 3 else 1000
+
+    makeFiles(folder, count, size)

@@ -1,52 +1,113 @@
-#include <iostream>
-#include <windows.h>
-#include <filesystem>
-#include "./src/app/processes/ProcessManagement.hpp"
-#include "./src/app/processes/Task.hpp"
-#include <ctime>
-#include <iomanip>
+#include "src/app/encryptDecrypt/Cryption.hpp"
+#include "src/app/fileHandling/IO.hpp"
+#include "src/app/processes/ProcessManagement.hpp"
 
-namespace fs = std::filesystem;
+#include <sys/time.h>
+
+#include <cstdlib>
+#include <cstring>
+#include <iostream>
+#include <string>
+#include <vector>
+
+double currentMillis() {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+
+    return now.tv_sec * 1000.0 + now.tv_usec / 1000.0;
+}
+
+// Runs every file one after another in this single process.
+double runSequential(const std::vector<std::string>& files, int key) {
+    double start = currentMillis();
+
+    for (size_t i = 0; i < files.size(); i++) {
+        cryptFile(files[i], key);
+    }
+
+    double elapsed = currentMillis() - start;
+    std::cout << "Sequential (1 process)   : " << elapsed << " ms" << std::endl;
+
+    return elapsed;
+}
+
+// Puts every file on the shared queue and lets a pool of child processes drain it.
+double runParallel(const std::vector<std::string>& files, int key, int workerCount) {
+    ProcessManagement manager;
+    if (!manager.isReady()) {
+        std::cout << "Could not set up shared memory" << std::endl;
+        return 0;
+    }
+
+    for (size_t i = 0; i < files.size(); i++) {
+        manager.addTask(files[i]);
+    }
+
+    double start = currentMillis();
+    manager.runWorkers(workerCount, key);
+    double elapsed = currentMillis() - start;
+
+    std::cout << "Parallel (" << workerCount << " processes)  : " << elapsed << " ms" << std::endl;
+
+    for (int worker = 0; worker < workerCount; worker++) {
+        std::cout << "   worker " << worker << " handled "
+                  << manager.filesDoneBy(worker) << " files" << std::endl;
+    }
+
+    return elapsed;
+}
 
 int main(int argc, char* argv[]) {
     std::string directory;
-    std::string action;
+    std::string mode = "parallel";
+    int workerCount = 4;
 
-    std::cout << "Enter the directory path: ";
-    std::getline(std::cin, directory);
+    for (int i = 1; i < argc - 1; i++) {
+        if (strcmp(argv[i], "--dir") == 0) directory = argv[i + 1];
+        if (strcmp(argv[i], "--mode") == 0) mode = argv[i + 1];
+        if (strcmp(argv[i], "--workers") == 0) workerCount = atoi(argv[i + 1]);
+    }
 
-    std::cout << "Enter the action (encrypt/decrypt): ";
-    std::getline(std::cin, action);
+    if (workerCount < 1) {
+        workerCount = 1;
+    }
 
-    try {
-        if (fs::exists(directory) && fs::is_directory(directory)) {
-            ProcessManagement processManagement;
+    if (workerCount > MAX_WORKERS) {
+        workerCount = MAX_WORKERS;
+    }
 
-            for (const auto& entry : fs::recursive_directory_iterator(directory)) {
-                if (entry.is_regular_file()) {
-                    std::string filePath = entry.path().string();
-                    IO io(filePath);
-                    std::fstream f_stream = std::move(io.getFileStream());
+    if (directory.empty()) {
+        std::cout << "Usage: ./encrypt_decrypt --dir <path> [--mode sequential|parallel|compare]"
+                  << " [--workers N]" << std::endl;
+        return 1;
+    }
 
-                    if (f_stream.is_open()) {
-                        Action taskAction = (action == "encrypt") ? Action::ENCRYPT : Action::DECRYPT;
-                        auto task = std::make_unique<Task>(std::move(f_stream), taskAction, filePath);
-                        
-                            std::time_t t = std::time(nullptr);
-                            std::tm* now = std::localtime(&t);
-                            std::cout << "Starting the encryption/decryption at: " << std::put_time(now, "%Y-%m-%d %H:%M:%S") << std::endl;
-                            processManagement.submitToQueue(std::move(task));
+    std::vector<std::string> files = IO::listFiles(directory);
+    if (files.empty()) {
+        std::cout << "No files found in " << directory << std::endl;
+        return 1;
+    }
 
-                    } else {
-                        std::cout << "Unable to open file: " << filePath << std::endl;
-                    }
-                }
-            }
-        } else {
-            std::cout << "Invalid directory path!" << std::endl;
-        }
-    } catch (const std::exception& ex) {
-        std::cout << "Error: " << ex.what() << std::endl;
+    int key = readKey();
+    std::cout << "Found " << files.size() << " files in " << directory << std::endl;
+
+    if (mode == "sequential") {
+        runSequential(files, key);
+        return 0;
+    }
+
+    if (mode == "parallel") {
+        runParallel(files, key, workerCount);
+        return 0;
+    }
+
+    // Compare mode runs both. The second run also puts the files back to normal,
+    // because XOR with the same key undoes the first run.
+    double sequentialTime = runSequential(files, key);
+    double parallelTime = runParallel(files, key, workerCount);
+
+    if (parallelTime > 0) {
+        std::cout << "Speedup: " << sequentialTime / parallelTime << "x" << std::endl;
     }
 
     return 0;

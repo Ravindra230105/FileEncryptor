@@ -1,20 +1,57 @@
-// IO.cpp
-#include <iostream>
 #include "IO.hpp"
 
-IO::IO(const std::string& file_path) {
-    file_stream.open(file_path, std::ios::in | std::ios::out | std::ios::binary);
-    if (!file_stream.is_open()) {
-        std::cout << "Unable to open file: " << file_path << std::endl;
+#include <dirent.h>
+#include <sys/stat.h>
+
+#include <fstream>
+
+// Walks the directory and returns the path of every regular file inside it.
+std::vector<std::string> IO::listFiles(const std::string& directory) {
+    std::vector<std::string> files;
+
+    DIR* dir = opendir(directory.c_str());
+    if (dir == NULL) {
+        return files;
     }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        std::string name = entry->d_name;
+        if (name == "." || name == "..") {
+            continue;
+        }
+
+        std::string fullPath = directory + "/" + name;
+
+        struct stat info;
+        if (stat(fullPath.c_str(), &info) == 0 && S_ISREG(info.st_mode)) {
+            files.push_back(fullPath);
+        }
+    }
+
+    closedir(dir);
+
+    return files;
 }
 
-IO::~IO() {
-    if (file_stream.is_open()) {
-        file_stream.close();
+bool IO::readFile(const std::string& path, std::vector<char>& data) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open()) {
+        return false;
     }
+
+    data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+
+    return true;
 }
 
-std::fstream IO::getFileStream() {
-    return std::move(file_stream);
+bool IO::writeFile(const std::string& path, const std::vector<char>& data) {
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        return false;
+    }
+
+    file.write(data.data(), data.size());
+
+    return true;
 }

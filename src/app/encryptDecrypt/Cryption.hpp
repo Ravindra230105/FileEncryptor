@@ -3,6 +3,7 @@
 
 #include <string>
 
-int executeCryption(const std::string& taskData);
+int readKey();
+bool cryptFile(const std::string& path, int key);
 
 #endif

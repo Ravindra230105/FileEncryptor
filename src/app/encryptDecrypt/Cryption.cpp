@@ -1,34 +1,32 @@
 #include "Cryption.hpp"
-#include "../processes/Task.hpp"
-#include "../fileHandling/ReadEnv.cpp"
-#include <ctime>
-#include <iomanip>
+#include "../fileHandling/IO.hpp"
 
-int executeCryption(const std::string& taskData) {
-    Task task = Task::fromString(taskData);
-    ReadEnv env;
-    std::string envKey = env.getenv();
-    int key = std::stoi(envKey);
-    if (task.action == Action::ENCRYPT) {
-        char ch;
-        while (task.f_stream.get(ch)) {
-            ch = (ch + key) % 256;
-            task.f_stream.seekp(-1, std::ios::cur);
-            task.f_stream.put(ch);
-        }
-        task.f_stream.close();
-    } else {
-        char ch;
-        while (task.f_stream.get(ch)) {
-            ch = (ch - key + 256) % 256;
-            task.f_stream.seekp(-1, std::ios::cur);
-            task.f_stream.put(ch);
-        }
-        task.f_stream.close();
+#include <fstream>
+#include <vector>
+
+// Reads the key from the .env file, falling back to a default if it is missing.
+int readKey() {
+    std::ifstream envFile(".env");
+    int key = 8717;
+
+    if (envFile.is_open()) {
+        envFile >> key;
     }
-    std::time_t t = std::time(nullptr);
-    std::tm* now = std::localtime(&t);
-    std::cout << "Exiting the encryption/decryption at: " << std::put_time(now, "%Y-%m-%d %H:%M:%S") << std::endl;
-    
-    return 0;
+
+    return key % 256;
+}
+
+// XOR is its own inverse, so this one function both encrypts and decrypts.
+bool cryptFile(const std::string& path, int key) {
+    std::vector<char> data;
+
+    if (!IO::readFile(path, data)) {
+        return false;
+    }
+
+    for (size_t i = 0; i < data.size(); i++) {
+        data[i] = data[i] ^ key;
+    }
+
+    return IO::writeFile(path, data);
 }

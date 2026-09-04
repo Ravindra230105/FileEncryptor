@@ -1,104 +1,90 @@
-# Parallel File Encryptor and Decryptor in C++
+# Parallel File Encryptor and Decryptor
 
-This project implements parallel encryption and decryption of files using multithreading and multiprocessing concepts of Operating system in C++.
+A C++ command line tool that encrypts every file in a folder. It can do the work one file at a
+time in a single process, or spread it across several child processes, so the two can be compared.
 
-## Table of Contents
-- [Project Theory](#project-theory)
-  - [Introduction](#introduction)
-  - [Basic Working Flow](#basic-working-flow)
-  - [Approach](#multi-threading-implementation)
-  - [Motivation](#motivation)
-  - [Features](#proxy-server-features)
-  - [OS Components Used](#os-components-used)
-  - [Limitations](#limitations)
-  - [Future Enhancements](#future-enhancements)
-- [How to Run](#how-to-run)
-- [Demo](#demo)
+The point of the project is the operating system side of it: creating processes with `fork()`,
+sharing a task queue between them through shared memory, and keeping that queue safe with a
+semaphore and a mutex.
 
+## How it works
 
-# Project Theory
+The parent process builds a list of files and copies each path into a shared memory region created
+with `mmap`. It then forks the worker processes. Because the memory is mapped with `MAP_SHARED`,
+every child sees the same queue.
 
-## Introduction
-This project is a parallel file encryption and decryption tool built in C++ using both multithreading and multiprocessing. It efficiently handles tasks by implementing a task queue, enabling concurrent processing of multiple files while securely managing encryption and decryption operations.
+Each worker repeats the same loop:
 
-## Project Workflow
+1. `sem_trywait` on the task semaphore. If it fails, the queue is empty and the worker exits.
+2. Lock the mutex, take the next file path, move the index forward, unlock.
+3. Encrypt that file.
 
-1. **User Input:**
-   - The user provides a file as input, specifying the path to the file they want to encrypt or decrypt.
+The parent then calls `waitpid` on each child so it knows when everything is finished.
 
-2. **File Handling (IO Class):**
-   - The `IO` class takes the file path provided by the user and reads the file.
-   - It returns the file stream, which contains the content to be processed.
+Because workers take files whenever they are free rather than getting a fixed share up front, the
+load balances itself. A run of 1000 files across 4 workers usually splits close to
+`296 / 271 / 220 / 213` depending on how big each file is.
 
-3. **Task Submission to Process Management:**
-   - The file processing task is submitted to the **Process Management** system.
-   - The process management system then submits the task to a **Task Queue**, which is responsible for managing and scheduling tasks.
-   - For each task, the task queue creates a child process from the parent process to handle individual file operations.
+A normal mutex only works inside a single process, so it is created with the
+`PTHREAD_PROCESS_SHARED` attribute, otherwise the children would each end up locking their own copy.
 
-4. **Encryption/Decryption in Child Processes:**
-   - Each child process performs either encryption or decryption on the file content, depending on the task assigned.
-   - The parallelism ensures efficient and fast processing of multiple files using multithreading and multiprocessing techniques.
+## The cipher
 
-## Approach
+Every byte is XORed with a key read from a `.env` file (8717 is used if the file is missing).
 
-### 1. **Multithreading**
-- **Multithreading** is implemented to allow multiple threads to run concurrently within the same process. This is particularly useful when performing tasks that involve I/O-bound operations such as reading from or writing to files.
-- By dividing the file content into smaller chunks, different threads can handle different parts of the file simultaneously, reducing the time required for encryption or decryption.
-- Threads in the program share the same memory space, which allows efficient data sharing, but also requires careful handling of shared resources to avoid race conditions.
+XOR is its own inverse, so the same function encrypts and decrypts. Running the tool twice on the
+same folder gives back the original files.
 
-### 2. **Multiprocessing**
-- **Multiprocessing** is used to achieve true parallelism by spawning separate processes for different tasks. Each process operates in its own memory space, which makes it ideal for CPU-bound tasks, such as encryption and decryption, that require intensive computation.
-- The **Process Management** system assigns file operations (encryption or decryption) to separate processes via the **Task Queue**. This ensures that multiple files can be processed simultaneously, with each process running independently.
-- The program leverages the ability of processes to work in parallel, utilizing multiple CPU cores for maximum performance.
-  
-### Key Concepts Implemented:
-- **Task Queue:** A queue that manages the scheduling of tasks and distributes them among multiple threads or processes.
-- **Semaphores:** Used to control access to shared resources, ensuring synchronization between threads during concurrent execution.
-- **Locks:** Mutex locks are implemented to avoid data inconsistency and race conditions when multiple threads access shared data.
+This is deliberately simple and is **not real encryption** - a single repeated byte is trivial to
+break. The project is about process management, not cryptography.
 
-  
+## Building and running
 
-## Motivation
-1. **File Security:** Ensures secure encryption and decryption of sensitive data.
-2. **Performance:** Speeds up processing with multithreading and multiprocessing.
-3. **OS Concurrency:** Demonstrates practical use of concurrency and process management.
+```bash
+make all
 
+./encrypt_decrypt --dir sample-data --mode compare --workers 4
+```
 
-## OS Components Used
-- **Threading**: To handle multiple requests simultaneously.
-- **Locks**: To manage concurrent data access.
-- **Semaphore**: For multi-thread synchronization.
-- **Cache**: Uses the **LRU (Least Recently Used)** algorithm for storing frequently accessed data.
+| Flag | Meaning | Default |
+|------|---------|---------|
+| `--dir` | folder to process | required |
+| `--mode` | `sequential`, `parallel` or `compare` | `parallel` |
+| `--workers` | number of child processes | 4 |
 
-## Limitations
-1. **Resource Overhead:** The use of multithreading and multiprocessing introduces additional overhead, which can impact performance, especially on systems with limited resources like CPU or memory.
+`compare` runs both versions and prints the speedup. The second run also restores the files,
+since XORing twice with the same key cancels out.
 
-2. **Platform Dependency:** The project is currently designed to run only on Linux-based systems, as it relies on POSIX threads and process management, making it less portable to other operating systems.
+Example output:
 
-## Future Enhancements
-- Implement **multiprocessing** for parallelism, improving performance.
-- Extend functionality to **restrict specific websites** based on predefined rules.
-- Support **POST requests** along with GET.
+```
+Found 200 files in test-data
+Sequential (1 process)   : 132.153 ms
+Parallel (8 processes)  : 51.5811 ms
+   worker 0 handled 34 files
+   worker 1 handled 29 files
+   worker 2 handled 30 files
+   worker 3 handled 26 files
+   worker 4 handled 23 files
+   worker 5 handled 22 files
+   worker 6 handled 19 files
+   worker 7 handled 17 files
+Speedup: 2.56205x
+```
 
-## How to Run
+That run was 200 files of 256 KB each on a 10 core Mac.
 
-To run this project, follow these steps:
+To make a folder to test with:
 
-1. Clone the repository:
-    ```bash
-    $ git clone  https://github.com/Ravindra230104/FileEncryptor.git
-    $ cd encryptor
-    ```
+```bash
+python3 makeDirs.py test-data 200 262144
+```
 
-2. Build the project:
-    ```bash
-    $ make all
-    ```
-    
-## Notes:
-- **Linux only**: This code runs on Linux machines.
-- **Disable browser cache**: Ensure your browser’s cache is disabled while testing the proxy server.
-- To run the proxy **without cache**, rename the file `proxy_server_with_cache.c` to `proxy_server_without_cache.c` in the Makefile and rebuild.
+## Notes and limits
 
-## Demo
-![Workflow Image](https://github.com/Ravindra230104/FileEncryptor/blob/main/workflow.png) 
+- Speedup is well under the number of workers because reading and writing the files is serial work
+  that cannot be split. With a cipher this cheap, most of the time goes on I/O rather than the CPU.
+- Bigger files show the difference better than very small ones.
+- Files are encrypted in place, so an interrupted run leaves them half done.
+- Uses `fork`, `mmap` and POSIX semaphores, so it runs on Linux and macOS but not Windows.
+- The whole file is read into memory, so a file has to fit in RAM.

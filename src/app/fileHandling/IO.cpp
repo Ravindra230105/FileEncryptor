@@ -3,7 +3,6 @@
 #include <sys/stat.h>
 #include <fstream>
 
-// returns all the file names present inside the given folder
 vector<string> IO::listFiles(string dir) {
     vector<string> files;
 
@@ -16,14 +15,12 @@ vector<string> IO::listFiles(string dir) {
     while ((entry = readdir(d)) != NULL) {
         string name = entry->d_name;
 
-        // skip the current and parent folder entries
         if (name == "." || name == "..") {
             continue;
         }
 
         string path = dir + "/" + name;
 
-        // take only normal files, not folders
         struct stat st;
         if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
             files.push_back(path);

@@ -8,14 +8,12 @@
 #include <string.h>
 using namespace std;
 
-// gives the current time in milliseconds
 double getTime() {
     struct timeval t;
     gettimeofday(&t, NULL);
     return t.tv_sec * 1000.0 + t.tv_usec / 1000.0;
 }
 
-// does all the files one by one in a single process
 double runSequential(vector<string> files, int key) {
     double start = getTime();
 
@@ -29,7 +27,6 @@ double runSequential(vector<string> files, int key) {
     return timeTaken;
 }
 
-// puts all the files in the queue and lets the child processes do the work
 double runParallel(vector<string> files, int key, int workers) {
     ProcessManagement pm;
 
@@ -60,7 +57,6 @@ int main(int argc, char *argv[]) {
     string mode = "parallel";
     int workers = 4;
 
-    // folder name can be given directly or with --dir
     if (argc > 1 && argv[1][0] != '-') {
         dir = argv[1];
     }
@@ -98,8 +94,6 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    // compare mode runs both of them. the second run also makes the files
-    // normal again because XOR two times cancels out
     double t1 = runSequential(files, key);
     double t2 = runParallel(files, key, workers);
 

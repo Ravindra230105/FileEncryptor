@@ -10,8 +10,6 @@ using namespace std;
 #define MAX_PATH_LEN 256
 #define MAX_WORKERS 32
 
-// this structure is kept in shared memory so that all the
-// child processes can see the same queue
 struct SharedData {
     char files[MAX_FILES][MAX_PATH_LEN];
     int total;

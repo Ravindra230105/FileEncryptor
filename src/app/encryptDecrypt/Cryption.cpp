@@ -3,7 +3,6 @@
 #include <fstream>
 #include <vector>
 
-// key is read from the .env file, if not found then default one is used
 int getKey() {
     int key = 8717;
 
@@ -16,8 +15,6 @@ int getKey() {
     return key % 256;
 }
 
-// same function is used for encrypt and decrypt
-// because doing XOR two times with the same key gives back the original data
 bool cryptFile(string path, int key) {
     vector<char> data;
 

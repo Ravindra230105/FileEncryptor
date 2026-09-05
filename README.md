@@ -43,8 +43,11 @@ break. The project is about process management, not cryptography.
 ```bash
 make all
 
-./encrypt_decrypt sample-data --mode compare --workers 4
+python3 makeDirs.py demo-data 200 262144
+./encrypt_decrypt demo-data --mode compare --workers 4
 ```
+
+The second line creates a folder of test files to run against.
 
 | Flag | Meaning | Default |
 |------|---------|---------|

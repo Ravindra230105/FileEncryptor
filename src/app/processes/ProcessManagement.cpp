@@ -17,7 +17,7 @@ ProcessManagement::ProcessManagement() {
         shared = NULL;
         remainingTasks = SEM_FAILED;
         return;
-    }
+    } 
 
     memset(shared, 0, sizeof(SharedData));
 

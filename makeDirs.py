@@ -16,7 +16,7 @@ def makeFiles(path, count, size):
     print(f"Created {count} files of {size} bytes in {path}")
 
 if __name__ == "__main__":
-    folder = sys.argv[1] if len(sys.argv) > 1 else "sample-data"
+    folder = sys.argv[1] if len(sys.argv) > 1 else "demo-data"
     count = int(sys.argv[2]) if len(sys.argv) > 2 else 1000
     size = int(sys.argv[3]) if len(sys.argv) > 3 else 1000
 

@@ -43,11 +43,13 @@ break. The project is about process management, not cryptography.
 ```bash
 make all
 
-python3 makeDirs.py demo-data 200 262144
+mkdir -p demo-data
+for i in $(seq 1 200); do head -c 262144 /dev/urandom > demo-data/file$i.bin; done
+
 ./encrypt_decrypt demo-data --mode compare --workers 4
 ```
 
-The second line creates a folder of test files to run against.
+The middle two lines make a folder of 200 files of 256 KB each to run against.
 
 | Flag | Meaning | Default |
 |------|---------|---------|
@@ -76,12 +78,6 @@ Speedup: 2.56205x
 ```
 
 That run was 200 files of 256 KB each on a 10 core Mac.
-
-To make a folder to test with:
-
-```bash
-python3 makeDirs.py test-data 200 262144
-```
 
 ## Notes and limits
 

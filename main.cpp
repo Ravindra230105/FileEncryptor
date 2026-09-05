@@ -62,6 +62,11 @@ int main(int argc, char* argv[]) {
     std::string mode = "parallel";
     int workerCount = 4;
 
+    // The folder can be given as the first argument, or with --dir.
+    if (argc > 1 && argv[1][0] != '-') {
+        directory = argv[1];
+    }
+
     for (int i = 1; i < argc - 1; i++) {
         if (strcmp(argv[i], "--dir") == 0) directory = argv[i + 1];
         if (strcmp(argv[i], "--mode") == 0) mode = argv[i + 1];
@@ -77,7 +82,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (directory.empty()) {
-        std::cout << "Usage: ./encrypt_decrypt --dir <path> [--mode sequential|parallel|compare]"
+        std::cout << "Usage: ./encrypt_decrypt <folder> [--mode sequential|parallel|compare]"
                   << " [--workers N]" << std::endl;
         return 1;
     }

@@ -43,12 +43,12 @@ break. The project is about process management, not cryptography.
 ```bash
 make all
 
-./encrypt_decrypt --dir sample-data --mode compare --workers 4
+./encrypt_decrypt sample-data --mode compare --workers 4
 ```
 
 | Flag | Meaning | Default |
 |------|---------|---------|
-| `--dir` | folder to process | required |
+| first argument | folder to process (or `--dir <path>`) | required |
 | `--mode` | `sequential`, `parallel` or `compare` | `parallel` |
 | `--workers` | number of child processes | 4 |
 

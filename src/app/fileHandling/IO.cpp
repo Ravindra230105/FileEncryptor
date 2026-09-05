@@ -1,57 +1,64 @@
 #include "IO.hpp"
-
 #include <dirent.h>
 #include <sys/stat.h>
-
 #include <fstream>
 
-// Walks the directory and returns the path of every regular file inside it.
-std::vector<std::string> IO::listFiles(const std::string& directory) {
-    std::vector<std::string> files;
+// returns all the file names present inside the given folder
+vector<string> IO::listFiles(string dir) {
+    vector<string> files;
 
-    DIR* dir = opendir(directory.c_str());
-    if (dir == NULL) {
+    DIR *d = opendir(dir.c_str());
+    if (d == NULL) {
         return files;
     }
 
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        std::string name = entry->d_name;
+    struct dirent *entry;
+    while ((entry = readdir(d)) != NULL) {
+        string name = entry->d_name;
+
+        // skip the current and parent folder entries
         if (name == "." || name == "..") {
             continue;
         }
 
-        std::string fullPath = directory + "/" + name;
+        string path = dir + "/" + name;
 
-        struct stat info;
-        if (stat(fullPath.c_str(), &info) == 0 && S_ISREG(info.st_mode)) {
-            files.push_back(fullPath);
+        // take only normal files, not folders
+        struct stat st;
+        if (stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode)) {
+            files.push_back(path);
         }
     }
 
-    closedir(dir);
-
+    closedir(d);
     return files;
 }
 
-bool IO::readFile(const std::string& path, std::vector<char>& data) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open()) {
+bool IO::readFile(string path, vector<char> &data) {
+    ifstream fin(path.c_str(), ios::binary);
+    if (!fin.is_open()) {
         return false;
     }
 
-    data.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    char ch;
+    while (fin.get(ch)) {
+        data.push_back(ch);
+    }
 
+    fin.close();
     return true;
 }
 
-bool IO::writeFile(const std::string& path, const std::vector<char>& data) {
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) {
+bool IO::writeFile(string path, vector<char> &data) {
+    ofstream fout(path.c_str(), ios::binary | ios::trunc);
+    if (!fout.is_open()) {
         return false;
     }
 
-    file.write(data.data(), data.size());
+    for (int i = 0; i < (int)data.size(); i++) {
+        fout.put(data[i]);
+    }
 
+    fout.close();
     return true;
 }

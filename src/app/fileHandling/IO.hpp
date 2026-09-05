@@ -3,12 +3,13 @@
 
 #include <string>
 #include <vector>
+using namespace std;
 
 class IO {
 public:
-    static std::vector<std::string> listFiles(const std::string& directory);
-    static bool readFile(const std::string& path, std::vector<char>& data);
-    static bool writeFile(const std::string& path, const std::vector<char>& data);
+    static vector<string> listFiles(string dir);
+    static bool readFile(string path, vector<char> &data);
+    static bool writeFile(string path, vector<char> &data);
 };
 
 #endif

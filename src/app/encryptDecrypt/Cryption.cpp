@@ -1,30 +1,31 @@
 #include "Cryption.hpp"
 #include "../fileHandling/IO.hpp"
-
 #include <fstream>
 #include <vector>
 
-// Reads the key from the .env file, falling back to a default if it is missing.
-int readKey() {
-    std::ifstream envFile(".env");
+// key is read from the .env file, if not found then default one is used
+int getKey() {
     int key = 8717;
 
-    if (envFile.is_open()) {
-        envFile >> key;
+    ifstream fin(".env");
+    if (fin.is_open()) {
+        fin >> key;
+        fin.close();
     }
 
     return key % 256;
 }
 
-// XOR is its own inverse, so this one function both encrypts and decrypts.
-bool cryptFile(const std::string& path, int key) {
-    std::vector<char> data;
+// same function is used for encrypt and decrypt
+// because doing XOR two times with the same key gives back the original data
+bool cryptFile(string path, int key) {
+    vector<char> data;
 
     if (!IO::readFile(path, data)) {
         return false;
     }
 
-    for (size_t i = 0; i < data.size(); i++) {
+    for (int i = 0; i < (int)data.size(); i++) {
         data[i] = data[i] ^ key;
     }
 

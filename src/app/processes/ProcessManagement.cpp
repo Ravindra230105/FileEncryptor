@@ -5,105 +5,115 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#include <cstring>
+#include <string.h>
+#include <vector>
 
 ProcessManagement::ProcessManagement() {
-    // MAP_SHARED means the memory stays visible to every process we fork later.
-    shared = (SharedData*) mmap(NULL, sizeof(SharedData), PROT_READ | PROT_WRITE,
-                                MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    // MAP_SHARED is important, otherwise every child will get its own
+    // copy of this memory and they will not see each other's changes
+    data = (SharedData *) mmap(NULL, sizeof(SharedData), PROT_READ | PROT_WRITE,
+                               MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 
-    if (shared == MAP_FAILED) {
-        shared = NULL;
-        remainingTasks = SEM_FAILED;
+    if (data == MAP_FAILED) {
+        data = NULL;
+        sem = SEM_FAILED;
         return;
-    } 
+    }
 
-    memset(shared, 0, sizeof(SharedData));
+    memset(data, 0, sizeof(SharedData));
 
-    // A normal mutex only works inside one process, so it has to be marked as shared.
-    pthread_mutexattr_t attributes;
-    pthread_mutexattr_init(&attributes);
-    pthread_mutexattr_setpshared(&attributes, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(&shared->lock, &attributes);
-    pthread_mutexattr_destroy(&attributes);
+    // a normal mutex works only inside one process, so we have to
+    // set this attribute to make it work between processes also
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(&data->lock, &attr);
+    pthread_mutexattr_destroy(&attr);
 
-    semaphoreName = "/encryptor-" + std::to_string(getpid());
-    sem_unlink(semaphoreName.c_str());
-    remainingTasks = sem_open(semaphoreName.c_str(), O_CREAT, 0644, 0);
+    // pid is added in the name so that two runs do not clash
+    semName = "/encryptor-" + to_string(getpid());
+
+    sem_unlink(semName.c_str());
+    sem = sem_open(semName.c_str(), O_CREAT, 0644, 0);
 }
 
 ProcessManagement::~ProcessManagement() {
-    if (remainingTasks != SEM_FAILED) {
-        sem_close(remainingTasks);
-        sem_unlink(semaphoreName.c_str());
+    if (sem != SEM_FAILED) {
+        sem_close(sem);
+        sem_unlink(semName.c_str());
     }
 
-    if (shared != NULL) {
-        munmap(shared, sizeof(SharedData));
+    if (data != NULL) {
+        munmap(data, sizeof(SharedData));
     }
 }
 
-bool ProcessManagement::isReady() const {
-    return shared != NULL && remainingTasks != SEM_FAILED;
+bool ProcessManagement::isReady() {
+    return data != NULL && sem != SEM_FAILED;
 }
 
-void ProcessManagement::addTask(const std::string& path) {
-    if (shared->taskCount >= MAX_FILES) {
+// parent adds all the files in the queue before creating the workers
+void ProcessManagement::addFile(string path) {
+    if (data->total >= MAX_FILES) {
         return;
     }
 
-    strncpy(shared->paths[shared->taskCount], path.c_str(), MAX_PATH_LENGTH - 1);
-    shared->taskCount++;
+    strncpy(data->files[data->total], path.c_str(), MAX_PATH_LEN - 1);
+    data->total++;
 
-    sem_post(remainingTasks);
+    sem_post(sem);
 }
 
-// Claims one file from the queue. Returns false once the queue is empty.
-bool ProcessManagement::takeNextTask(std::string& path) {
-    if (sem_trywait(remainingTasks) != 0) {
+// takes one file from the queue, returns false if queue is empty
+bool ProcessManagement::getNextFile(string &path) {
+    // semaphore tells us whether any file is left or not
+    if (sem_trywait(sem) != 0) {
         return false;
     }
 
-    pthread_mutex_lock(&shared->lock);
-    path = shared->paths[shared->nextTask];
-    shared->nextTask++;
-    pthread_mutex_unlock(&shared->lock);
+    // mutex tells us which file we get, without this two workers
+    // can read the same index and encrypt the same file twice
+    pthread_mutex_lock(&data->lock);
+    path = data->files[data->next];
+    data->next++;
+    pthread_mutex_unlock(&data->lock);
 
     return true;
 }
 
-void ProcessManagement::workerLoop(int worker, int key) {
-    std::string path;
+void ProcessManagement::doWork(int id, int key) {
+    string path;
 
-    while (takeNextTask(path)) {
+    while (getNextFile(path)) {
         if (cryptFile(path, key)) {
-            shared->filesDone[worker]++;
+            data->done[id]++;
         }
     }
 }
 
-void ProcessManagement::runWorkers(int workerCount, int key) {
-    std::vector<pid_t> children;
+void ProcessManagement::startWorkers(int workers, int key) {
+    vector<int> pids;
 
-    for (int worker = 0; worker < workerCount; worker++) {
-        pid_t pid = fork();
+    for (int i = 0; i < workers; i++) {
+        int pid = fork();
 
+        // fork returns 0 in the child and child's pid in the parent
         if (pid == 0) {
-            workerLoop(worker, key);
+            doWork(i, key);
             _exit(0);
         }
 
         if (pid > 0) {
-            children.push_back(pid);
+            pids.push_back(pid);
         }
     }
 
-    for (size_t i = 0; i < children.size(); i++) {
-        waitpid(children[i], NULL, 0);
+    // parent waits here till all the children finish their work
+    for (int i = 0; i < (int)pids.size(); i++) {
+        waitpid(pids[i], NULL, 0);
     }
 }
 
-int ProcessManagement::filesDoneBy(int worker) const {
-    return shared->filesDone[worker];
+int ProcessManagement::getDoneCount(int id) {
+    return data->done[id];
 }

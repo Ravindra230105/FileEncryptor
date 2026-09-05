@@ -2,8 +2,9 @@
 #define CRYPTION_HPP
 
 #include <string>
+using namespace std;
 
-int readKey();
-bool cryptFile(const std::string& path, int key);
+int getKey();
+bool cryptFile(string path, int key);
 
 #endif
